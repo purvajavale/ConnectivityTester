@@ -1,0 +1,155 @@
+public class AWSConnectivityTester
+    {
+        public static void TestMain(string[] args)
+        {
+
+            System.Console.Write("\nHere are the options :\n");
+            System.Console.Write("1-DoAmazonS3ConnectTest.\n2-WriteFileToS3.\n3-ReadFileFromS3.\n");
+            System.Console.Write("\nInput your choice :");
+            int jOption = Convert.ToInt32(Console.ReadLine());
+
+            switch (jOption)
+            {
+                case 1:
+                    AWSConnectivityTester.DoAmazonS3ConnectTest();
+                    break;
+
+                case 2:
+                    AWSConnectivityTester.WriteFileToS3();
+                    break;
+
+                case 3:
+                    AWSConnectivityTester.ReadFileFromS3();
+                    break;
+
+                default:
+                    Console.Write("Input correct option\n");
+                    break;
+            }
+
+        }
+
+        public static void DoAmazonS3ConnectTest()
+        {
+            System.Console.WriteLine("In OdbcTestConnection");
+            try
+            {
+                Console.Write("Enter query : ");
+                String sValue = Console.ReadLine();
+
+                String sReadQueryFromFile = sValue;
+                Console.WriteLine("Query from file : " + sReadQueryFromFile);
+
+                String sQuery = sReadQueryFromFile;
+                //RedShift unload command needs to escape single quote and double quote  
+                sQuery = sQuery.Replace("'", @"\'");
+                sQuery = sQuery.Replace(@"""", @"\""");
+                String sUri = System.Configuration.ConfigurationManager.AppSettings["RedshiftFolderString"];
+                Console.WriteLine("Query after triming : " + sQuery);
+
+
+                string sConnectionstring = System.Configuration.ConfigurationManager.AppSettings["ConnectionString"];
+                System.Console.WriteLine("Connection : " + sConnectionstring);
+
+                System.Console.WriteLine("Opening connection");
+                OdbcConnection objOdbcConnection = new OdbcConnection(sConnectionstring);
+                objOdbcConnection.Open();
+                System.Console.WriteLine("Connection opened");
+
+                DataTable objDataTableUnload = new DataTable();
+                System.Console.WriteLine("Using unload command");
+                string sRedShiftUnloadQuery = "unload(' " + sQuery + " ') to '" + System.Configuration.ConfigurationManager.AppSettings["RedshiftQueryResultBucketLocationString"]
+                                                 + sUri + "' " + System.Configuration.ConfigurationManager.AppSettings["RedshiftQueryResultBucketIAMRoleString"]
+                                                + " delimiter as '\t' PARALLEL OFF HEADER ;";
+                System.Console.WriteLine("RedShiftUnloadQuery  : " + sRedShiftUnloadQuery);
+                OdbcDataAdapter objOdbcDataAdapterUnload = new OdbcDataAdapter(sRedShiftUnloadQuery, objOdbcConnection);
+                objOdbcDataAdapterUnload.Fill(objDataTableUnload);
+                System.Console.WriteLine("Executed unload command");
+
+                objOdbcConnection.Close();
+                System.Console.WriteLine("Connection closed");
+            }
+            catch (Exception ex)
+            {
+                System.Console.Error.WriteLine(ex.StackTrace);
+            }
+
+        }
+
+        public static void WriteFileToS3()
+        {
+            System.Console.WriteLine("In WriteFileToS3");
+            try
+            {
+                System.Console.Write("Enter file path (e.g : E:/Cust.txt) : ");
+                String sFilePath = Console.ReadLine();
+
+                System.Console.Write("Enter file name (e.g : Cust.txt) : ");
+                String sFile = Console.ReadLine();
+
+                FileStream objFileStream = new FileStream(sFilePath, FileMode.Open, FileAccess.Read);
+                System.Console.WriteLine("Filepath : " + sFilePath + "File : " + sFile);
+
+                Console.Write("Enter bucket name (e.g : demobucket) : ");
+                String sBucketName = Console.ReadLine();
+
+                AmazonS3Client objAmazonS3Client = new AmazonS3Client();
+                PutObjectRequest objPutObjectRequest = new PutObjectRequest
+                {
+                    BucketName = sBucketName,
+                    Key = sFile,
+                    InputStream = objFileStream,
+                    ContentType = "text/plain",
+                };
+
+                System.Console.WriteLine("PutObjectRequest.." + objPutObjectRequest);
+                PutObjectResponse objPutObjectResponse = objAmazonS3Client.PutObject(objPutObjectRequest);
+                System.Console.WriteLine("PutObjectResponse.." + objPutObjectResponse.ResponseMetadata);
+
+            }
+            catch (AmazonS3Exception e)
+            {
+                System.Console.Error.WriteLine(e.StackTrace);
+            }
+            catch (Exception e)
+            {
+                System.Console.Error.WriteLine(e.StackTrace);
+            }
+
+        }
+
+
+        public static void ReadFileFromS3()
+        {
+            System.Console.WriteLine("In ReadFileFromS3");
+            AmazonS3Client objAmazonS3Client = new AmazonS3Client();
+
+            using (objAmazonS3Client)
+            {
+                long lSizeTotal = 0;
+                try
+                {
+                    Console.Write("Enter Bucket : ");
+                    String sValue = Console.ReadLine();
+                    ListObjectsRequest objListObjectsRequest = new ListObjectsRequest()
+                    {
+                        BucketName = sValue,
+                        Delimiter = "/"
+                    };
+
+                    ListObjectsResponse objListObjectsResponse = objAmazonS3Client.ListObjects(objListObjectsRequest);
+                    foreach (S3Object objS3Object in objListObjectsResponse.S3Objects)
+                    {
+                        lSizeTotal += objS3Object.Size;
+                    }
+                    System.Console.WriteLine("Size : " + lSizeTotal);
+                }
+
+                catch (AmazonS3Exception ex)
+                {
+                    System.Console.Error.WriteLine(ex.StackTrace);
+                }
+            }
+        }
+
+    }
